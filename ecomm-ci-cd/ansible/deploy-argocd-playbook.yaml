@@ -1,0 +1,45 @@
+- name: Deploy ArgoCD on EKS
+  hosts: localhost
+  vars:
+    ns: "argocd"
+  tasks:
+    - name: Create ArgoCD Application
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: argoproj.io/v1alpha1
+          kind: Application
+          metadata:
+            name: ecomm-ci-cd
+            namespace: {{ ns }}
+          spec:
+            project: default
+            source:
+              repoURL: "https://github.com/abdessamadabidar/GitOps.git"
+              targetRevision: HEAD
+              path: ecomm-ci-cd
+            destination:
+              server: "https://kubernetes.default.svc"
+              namespace: default
+            syncPolicy:
+              automated:
+                selfHeal: true
+                prune: true
+    
+    - name: Create ArgoCD LoadBalancer service
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: argocd-lb
+            namespace: {{ ns }}
+          spec:
+            type: LoadBalancer
+            ports:
+              - protocol: TCP
+                port: 443
+                targetPort: 8080
+            selector:
+              app.kubernetes.io/name: argocd-server

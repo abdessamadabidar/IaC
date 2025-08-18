@@ -1,0 +1,51 @@
+---
+- name: Setup ArgoCD on EKS
+  hosts: localhost
+  tasks:
+    - name: Update Kubeconfig for EKS using aws cli
+      shell: |
+        aws eks update-kubeconfig \
+        --region {{ region }} \
+        --name {{ cluster_name }}
+      vars:
+        region: "us-east-1"
+        cluster_name: "ecomm-eks"
+        
+    - name: Create k8s ArgoCD namespace
+      kubernetes.core.k8s:
+        name: argocd
+        api_version: v1
+        kind: Namespace
+        state: present
+
+    - name: Install ArgoCD
+      kubernetes.core.k8s:
+        src: https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+        state: present
+        namespace: argocd
+
+    - name: Wait till ArgoCD server is deployed
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Deployment
+        namespace: argocd
+        wait: yes
+        wait_condition:
+          type: Available
+          status: "True"
+        wait_timeout: 300
+        wait_sleep: 10
+    
+    - name: Get initial ArgoCD admin password
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Secret
+        namespace: argocd
+        name: argocd-initial-admin-secret
+      register: admin_secret
+
+    - name: Decode and log admin password
+      debug:
+        msg: "Iinitial Admin Password : {{ admin_secret.resources[0].data.password | b64decode }}"
+      when: admin_secret.resources | length > 0
+

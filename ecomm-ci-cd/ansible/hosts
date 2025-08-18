@@ -1,7 +1,4 @@
-[ec2]
-54.237.4.160
+localhost ansible_connection=local
 
-[ec2:vars]
-ansible_connection=ssh
-ansible_user=ec2-user
+[all:vars]
 ansible_python_interpreter=/usr/bin/python3.9
