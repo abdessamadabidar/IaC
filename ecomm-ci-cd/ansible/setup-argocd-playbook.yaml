@@ -1,19 +1,28 @@
 ---
 - name: Setup ArgoCD on EKS
   hosts: localhost
+  vars:
+    ns: argocd
+    region: "us-east-1"
+    cluster_name: "ecomm-eks"
+    aws_ecr_server: ""
   tasks:
     - name: Update Kubeconfig for EKS using aws cli
       shell: |
         aws eks update-kubeconfig \
         --region {{ region }} \
         --name {{ cluster_name }}
-      vars:
-        region: "us-east-1"
-        cluster_name: "ecomm-eks"
+    
+    - name: Create Docker Registry secret for AWS ECR
+      shell: |
+        kubectl create secret docker-registry regcred \
+        --docker-server={{ aws_ecr_server }} \
+        --docker-username=AWS \
+        --docker-password=$(aws ecr get-login-password --region {{ region }}) \
         
     - name: Create k8s ArgoCD namespace
       kubernetes.core.k8s:
-        name: argocd
+        name: {{ ns }}
         api_version: v1
         kind: Namespace
         state: present
@@ -22,13 +31,13 @@
       kubernetes.core.k8s:
         src: https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
         state: present
-        namespace: argocd
+        namespace: {{ ns }}
 
     - name: Wait till ArgoCD server is deployed
       kubernetes.core.k8s_info:
         api_version: v1
         kind: Deployment
-        namespace: argocd
+        namespace: {{ ns }}
         wait: yes
         wait_condition:
           type: Available
@@ -40,7 +49,7 @@
       kubernetes.core.k8s_info:
         api_version: v1
         kind: Secret
-        namespace: argocd
+        namespace: {{ ns }}
         name: argocd-initial-admin-secret
       register: admin_secret
 
