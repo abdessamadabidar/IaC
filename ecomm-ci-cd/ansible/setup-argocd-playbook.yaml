@@ -1,10 +1,11 @@
 ---
 - name: Setup ArgoCD on EKS
   hosts: localhost
+  connection: local
   vars:
     ns: argocd
     region: "us-east-1"
-    cluster_name: "ecomm-eks"
+    cluster_name: "ecomm-eks-cluster"
     aws_ecr_server: "314146337686.dkr.ecr.us-east-1.amazonaws.com"
   tasks:
     - name: Update Kubeconfig for EKS using aws cli
@@ -13,31 +14,58 @@
         --region {{ region }} \
         --name {{ cluster_name }}
     
-    - name: Create Docker Registry secret for AWS ECR
-      shell: |
-        kubectl create secret docker-registry regcred \
-        --docker-server={{ aws_ecr_server }} \
-        --docker-username=AWS \
-        --docker-password=$(aws ecr get-login-password --region {{ region }}) \
-        
+    - name: install pre-requisites
+      ansible.builtin.pip:
+        name:
+          - openshift
+          - pyyaml
+          - kubernetes
+
     - name: Create k8s ArgoCD namespace
       kubernetes.core.k8s:
-        name: {{ ns }}
+        name: "{{ ns }}"
         api_version: v1
         kind: Namespace
         state: present
+
+    - name: Create Docker Registry secret for AWS ECR
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: ecr-registry-key
+            namespace: "{{ ns }}"
+          type: kubernetes.io/dockerconfigjson
+          data: 
+            .dockerconfigjson: "{{ dockerconfjson | to_json | b64encode }}"
+      vars:
+        ecr_token: "{{ lookup('pipe', 'aws ecr get-login-password --region ' + region) }}"
+        dockerconfjson:
+          auths:
+            "{{ aws_ecr_server }}":
+              username: "AWS"
+              password: "{{ ecr_token }}"  
+        
 
     - name: Install ArgoCD
       kubernetes.core.k8s:
         src: https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
         state: present
-        namespace: {{ ns }}
+        namespace: "{{ ns }}"
+    
+    - name: Install ArgoCD Image Updater
+      kubernetes.core.k8s:
+        src: https://raw.githubusercontent.com/argoproj-labs/argocd-image-updater/stable/manifests/install.yaml
+        state: present
+        namespace: "{{ ns }}"
 
     - name: Wait till ArgoCD server is deployed
       kubernetes.core.k8s_info:
         api_version: v1
         kind: Deployment
-        namespace: {{ ns }}
+        namespace: "{{ ns }}"
         wait: yes
         wait_condition:
           type: Available
@@ -49,7 +77,7 @@
       kubernetes.core.k8s_info:
         api_version: v1
         kind: Secret
-        namespace: {{ ns }}
+        namespace: "{{ ns }}"
         name: argocd-initial-admin-secret
       register: admin_secret
 
@@ -58,3 +86,20 @@
         msg: "Iinitial Admin Password : {{ admin_secret.resources[0].data.password | b64decode }}"
       when: admin_secret.resources | length > 0
 
+    - name: Expose ArgoCD LoadBalancer service
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: argocd-lb
+            namespace: "{{ ns }}"
+          spec:
+            type: LoadBalancer
+            ports:
+              - protocol: TCP
+                port: 80
+                targetPort: 8080
+            selector:
+              app.kubernetes.io/name: argocd-server

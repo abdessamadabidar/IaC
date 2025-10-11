@@ -20,15 +20,15 @@ module "eks" {
  # EKS Managed Node Group(s)
   eks_managed_node_groups = {
     dev = {
-      instance_types = ["t2.small"]
+      instance_types = ["t3.medium"]
 
       min_size     = 1
       max_size     = 3
       desired_size = 3
+
     }
+
   }
 
 
 }
-
-

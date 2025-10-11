@@ -11,7 +11,14 @@
           kind: Application
           metadata:
             name: ecomm-ci-cd
-            namespace: {{ ns }}
+            namespace: "{{ ns }}"
+            annotations:
+              argocd-image-updater.argoproj.io/image-list: |
+                backend=314146337686.dkr.ecr.us-east-1.amazonaws.com/ecomm.ci.cd.back,
+                frontend=314146337686.dkr.ecr.us-east-1.amazonaws.com/ecomm.ci.cd.front
+              argocd-image-updater.argoproj.io/backend.update-strategy: latest
+              argocd-image-updater.argoproj.io/frontend.update-strategy: latest
+              argocd-image-updater.argoproj.io/write-back-method: git
           spec:
             project: default
             source:
@@ -26,20 +33,3 @@
                 selfHeal: true
                 prune: true
     
-    - name: Create ArgoCD LoadBalancer service
-      kubernetes.core.k8s:
-        state: present
-        definition:
-          apiVersion: v1
-          kind: Service
-          metadata:
-            name: argocd-lb
-            namespace: {{ ns }}
-          spec:
-            type: LoadBalancer
-            ports:
-              - protocol: TCP
-                port: 443
-                targetPort: 8080
-            selector:
-              app.kubernetes.io/name: argocd-server

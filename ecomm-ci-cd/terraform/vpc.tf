@@ -2,7 +2,7 @@
 provider "aws" {
     access_key = var.access_key
     secret_key = var.secret_key
-    region = "us-east-1"
+    region = "eu-west-3"
 }
 
 variable "access_key" {}
@@ -27,7 +27,7 @@ module "ecomm-vpc" {
    public_subnets = var.public_subnet_cidrs
 
    enable_nat_gateway = true
-   single_nat_gateway = true
+   single_nat_gateway = false
    enable_vpn_gateway = true
    enable_dns_hostnames = true
 
