@@ -1,0 +1,75 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  namespace: postgres
+  name: postgres
+  labels:
+    app: postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  serviceName: pg-svc
+  template:
+    metadata:
+      annotations:
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/role: "vault-role"
+        vault.hashicorp.com/agent-inject-status: "update"
+        vault.hashicorp.com/agent-inject-secret-postgres: "secret/data/database/postgres"
+        vault.hashicorp.com/agent-inject-template-postgres: |
+          {{- with secret "secret/data/database/postgres" -}}
+          export POSTGRES_USER="{{ .Data.data.POSTGRES_USER }}"
+          export POSTGRES_PASSWORD="{{ .Data.data.POSTGRES_PASSWORD }}"
+          {{- end }}
+      labels:
+        app: postgres
+    spec:
+      serviceAccountName: vault
+      restartPolicy: Always
+      containers:
+      - name: postgres
+        image: postgres:15-alpine
+        command:
+          ['sh', '-c']
+        args: ['source /vault/secrets/postgres && exec docker-entrypoint.sh postgres']
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 5432
+          protocol: TCP
+        env:
+          - name: PGDATA
+            value: /var/lib/postgresql/data/pgdata
+          - name: POSTGRES_DB
+            value: keycloak
+        volumeMounts:
+        - name: pg-pvc
+          mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: pg-pvc
+      labels:
+        app: postgres
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      storageClassName: pg-sc
+      resources:
+        requests:
+          storage: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  namespace: postgres
+  name: pg-svc
+spec:
+  ports:
+  - port: 5432
+    protocol: TCP
+    targetPort: 5432
+  selector:
+    app: postgres

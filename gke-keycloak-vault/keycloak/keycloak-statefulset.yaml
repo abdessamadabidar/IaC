@@ -1,0 +1,86 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  namespace: keycloak
+  labels:
+    app: keycloak
+  name: keycloak
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: keycloak
+  serviceName: keycloak-headless
+  template:
+    metadata:
+      annotations:
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/role: "vault-role"
+        vault.hashicorp.com/agent-inject-status: "update"
+        vault.hashicorp.com/agent-inject-secret-keycloak: "secret/data/keycloak/admin"
+        vault.hashicorp.com/agent-inject-template-keycloak: |
+          {{- with secret "secret/data/keycloak/admin" -}}
+          export KEYCLOAK_ADMIN="{{ .Data.data.KEYCLOAK_ADMIN }}"
+          export KEYCLOAK_ADMIN_PASSWORD="{{ .Data.data.KEYCLOAK_ADMIN_PASSWORD }}"
+          {{- end }}
+        vault.hashicorp.com/agent-inject-secret-postgres: "secret/data/database/postgres"
+        vault.hashicorp.com/agent-inject-template-postgres: |
+          {{- with secret "secret/data/database/postgres" -}}
+          export KC_DB_USERNAME="{{ .Data.data.POSTGRES_USER }}"
+          export KC_DB_PASSWORD="{{ .Data.data.POSTGRES_PASSWORD }}"
+          {{- end }}
+      labels:
+        app: keycloak
+    spec:
+      serviceAccountName: vault
+      containers:
+      - name: keycloak
+        image: quay.io/keycloak/keycloak:latest
+        command:
+          ['sh', '-c']
+        args: ['source /vault/secrets/keycloak && source /vault/secrets/postgres && /opt/keycloak/bin/kc.sh start-dev']
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        env:
+        - name: KC_DB
+          value: postgres
+        - name: KC_DB_URL
+          value: jdbc:postgresql://pg-svc.postgres.svc.cluster.local:5432/keycloak
+        - name: KC_DB_SCHEMA
+          value: public
+---
+apiVersion: v1
+kind: Service
+metadata:
+  namespace: keycloak
+  name: keycloak-headless
+  labels:
+    app: keycloak
+spec:
+  clusterIP: None
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+  selector:
+    app: keycloak
+---
+apiVersion: v1
+kind: Service
+metadata:
+  namespace: keycloak
+  name: keycloak
+  labels:
+    app: keycloak
+spec:
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+  selector:
+    app: keycloak
+  type: LoadBalancer
+
